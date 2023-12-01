@@ -1,15 +1,24 @@
 import taichi as ti
 import trimesh
+import numpy as np
+from PIL import Image
 ti.init(ti.cuda)
 
 VERTEX_NUMBER=5958
 FACE_NUMBER=11904
 filename='./assets/ball.obj'
+WIDTH=1024
+HIGHT=2048
+TEX_RESOLUTION=(WIDTH,HIGHT,3)
+
 ball_center=ti.Vector.field(3,dtype=float,shape=(1,))
 ball_center[0]=[.0,.0,.0]
 earth_vertices=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
 moon_vertices=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
 sun_vertices=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
+
+earth_colors=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
+tex=ti.Vector(3,dtype=ti.f32,shape=TEX_RESOLUTION)
 uv_coords=ti.Vector.field(2,dtype=float,shape=VERTEX_NUMBER)
 indices=ti.field(ti.i32,shape=3*FACE_NUMBER)
 
@@ -35,9 +44,20 @@ def loadObjects():
     np_indices=np_indices.reshape(-1)
     indices.from_numpy(np_indices)
 
+
+@ti.kernel
+def render_earth():
+    pass
+
+def texture_mapping():
+    earth=Image.open('./assets/textures/earth.jpg').convert('RGB')
+    tex.from_numpy(np.array(earth))
+    render_earth()
+
 def main():
     loadObjects()
     computeUV()
+    texture_mapping()
     window=ti.ui.Window("Sun Earth Moon",(1024,1024),vsync=True)
     canvas=window.get_canvas()
     
