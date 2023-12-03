@@ -44,8 +44,8 @@ class SolarSystem:
 
     @staticmethod
     def render(gui):  # Render the scene on GUI
-        gui.circle([0.5, 0.5], radius=10, color=0xFFAA88)
-        gui.circles(solar.x.to_numpy(), radius=3, color=0xFFFFFF)
+        gui.circle([0.5, 0.5], radius=15, color=0xFFAA88)
+        gui.circles(solar.x.to_numpy(), radius=5, color=0xFFFFFF)
 
 
 def main():
