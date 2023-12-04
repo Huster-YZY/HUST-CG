@@ -170,6 +170,10 @@ def init():
     
 
 def main():
+    result_dir = "../frames"
+    video_manager = ti.tools.VideoManager(output_dir=result_dir,
+                                        framerate=60,
+                                        automatic_build=True)
     init()
     loadObjects()
     computeUV()
@@ -194,9 +198,8 @@ def main():
 
         canvas.scene(scene)
         canvas.set_background_color((0.,0.,0.))
+        # video_manager.write_frame(window.get_image_buffer_as_numpy())
         window.show()
-        # while 1:
-        #     pass
 
 
 if __name__=="__main__":

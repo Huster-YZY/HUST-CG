@@ -2,3 +2,4 @@ include
 *.o
 *.out
 .vscode
+frames/
