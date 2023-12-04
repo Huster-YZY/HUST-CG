@@ -13,12 +13,16 @@ filename='./assets/sphere.obj'
 WIDTH=1024
 HEIGHT=2048
 TEX_RESOLUTION=(WIDTH,HEIGHT)
-earth_to_sun=10
+earth_to_sun=5
+moon_to_earth=0.5
 
 sphere_vertices=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
 earth_vertices=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
 moon_vertices=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
 sun_vertices=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
+
+earth_normals=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
+moon_normals=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
 
 earth_colors=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
 sun_colors=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
@@ -26,6 +30,15 @@ moon_colors=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
 
 earth_x=ti.Vector.field(3,dtype=float,shape=())
 earth_v=ti.Vector.field(3,dtype=float,shape=())
+earth_angular=ti.field(dtype=float,shape=())
+earth_angular_velocity=2.0
+
+moon_x=ti.Vector.field(3,dtype=float,shape=())
+moon_v=ti.Vector.field(3,dtype=float,shape=())
+moon_rotation_angular=ti.field(dtype=float,shape=())
+moon_rotation_v=1.5
+moon_revolution_angular=ti.field(dtype=float,shape=())
+moon_revolution_v=1.5
 
 tex=ti.Vector.field(3,dtype=int,shape=TEX_RESOLUTION)
 uv_coords=ti.Vector.field(2,dtype=float,shape=VERTEX_NUMBER)
@@ -81,37 +94,79 @@ def texture_mapping():
     render_moon()
 
 def render(scene):
-    scene.mesh(vertices=earth_vertices,indices=indices,per_vertex_color=earth_colors)
-    scene.mesh(vertices=sphere_vertices,indices=indices,per_vertex_color=sun_colors)
-
-@ti.kernel
-def transformation():
-    earth_scale=0.3
-    for i in ti.grouped(sphere_vertices):
-        earth_vertices[i]=sphere_vertices[i]+earth_x[None]
-        earth_vertices[i]*=earth_scale
+    scene.mesh(vertices=sun_vertices,indices=indices,per_vertex_color=sun_colors)
+    scene.mesh(vertices=earth_vertices,indices=indices,per_vertex_color=earth_colors,normals=earth_normals)
+    scene.mesh(vertices=moon_vertices,indices=indices,per_vertex_color=moon_colors,normals=moon_normals)
 
 @ti.func
-def gravity(pos):
-    return -pos/pos.norm()**3
+def get_rotation_matrix(angular,axis):
+    theta=ti.math.pi*angular/180.0
+    ret=ti.Matrix([
+            [1.0,.0,.0],
+            [.0,ti.cos(theta),-ti.sin(theta)],
+            [.0,ti.sin(theta),ti.cos(theta)]])
+    if axis==1:
+        ret=ti.Matrix([
+            [ti.cos(theta),.0,ti.sin(theta)],
+            [.0,1.0,.0],
+            [-ti.sin(theta),.0,ti.cos(theta)]])
+    elif axis==2:
+       ret=ti.Matrix([
+            [ti.cos(theta),-ti.sin(theta),.0],
+            [ti.sin(theta),ti.cos(theta),.0],
+            [.0,.0,1.0]])
+    return ret
+    
+@ti.kernel
+def transformation():
+    sun_scale=2.0
+    earth_scale=0.4
+    moon_scale=0.1
+    earth_rot=get_rotation_matrix(earth_angular[None],2)
+    moon_rot=get_rotation_matrix(moon_rotation_angular[None],0)
+    moon_rev=get_rotation_matrix(moon_revolution_angular[None],0)
+    for i in ti.grouped(sphere_vertices):
+        sun_vertices[i]=sphere_vertices[i]*sun_scale
+        earth_vertices[i]=earth_rot@sphere_vertices[i]*earth_scale+earth_x[None]
+        earth_normals[i]=earth_vertices[i]-earth_x[None]
+        moon_vertices[i]=moon_rev@(moon_rot@sphere_vertices[i]*moon_scale+ti.Vector([.0,moon_to_earth,.0]))+earth_x[None]
+        moon_normals[i]-=moon_rev@ti.Vector([.0,moon_to_earth,.0])+earth_x[None]
+    
+
+@ti.func
+def gravity(k,pos,center):
+    r=pos-center
+    return -k*r/r.norm()**3
 
 @ti.kernel
 def substep():
-    earth_v[None]+=dt*gravity(earth_x[None])
+    earth_v[None]+=dt*gravity(k=4.0,pos=earth_x[None],center=ti.Vector((.0,.0,.0)))
     earth_x[None]+=dt*earth_v[None]
 
+def check_field_upperbound(field,upper_bound):
+    if field[None]>upper_bound:
+        field[None]-=upper_bound
+
 def step():
-    for i in range(100):
+    for _ in range(100):
         substep()
+    earth_angular[None]+=earth_angular_velocity
+    moon_rotation_angular[None]+=moon_rotation_v
+    moon_revolution_angular[None]+=moon_revolution_v
+
+    check_field_upperbound(earth_angular,360)
+    check_field_upperbound(moon_rotation_angular,360)
+    check_field_upperbound(moon_revolution_angular,360)
+
     transformation()
 
 def init():
     ox,oy=0.6,0.8
     earth_v[None]=(-oy,ox,0)
+    moon_v[None]=(0,-oy,ox)
     earth_v[None]*=10/earth_to_sun**1.5
-    ox*=earth_to_sun
-    oy*=earth_to_sun
-    earth_x[None]=(ox,oy,0)
+
+    earth_x[None]=(ox*earth_to_sun,oy*earth_to_sun,0)
     
 
 def main():
@@ -124,11 +179,13 @@ def main():
     
     scene=ti.ui.Scene()
     camera=ti.ui.Camera()
-    camera.position(0,0,5)
+    camera.position(10,10,10)
+    camera.lookat(0,0,0)
+    camera.up(0,0,1)
     
     while window.running:
-        scene.point_light(pos=(0,5,0),color=(1,1,1))
-        scene.ambient_light((0.5,0.5,0.5))
+        scene.point_light(pos=(0,0,0),color=(1,1,1))
+        scene.ambient_light((0.3,0.3,0.3))
         camera.track_user_inputs(window,movement_speed=0.05,hold_key=ti.ui.LMB)
 
         scene.set_camera(camera)
@@ -138,6 +195,8 @@ def main():
         canvas.scene(scene)
         canvas.set_background_color((0.,0.,0.))
         window.show()
+        # while 1:
+        #     pass
 
 
 if __name__=="__main__":
