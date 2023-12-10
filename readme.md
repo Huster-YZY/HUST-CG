@@ -16,3 +16,9 @@ conda activate hustcg
 
 pip install -r requirements.txt
 ```
+
+# Run
+```bash
+cd python
+python solar.py
+```
