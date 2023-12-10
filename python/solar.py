@@ -1,11 +1,20 @@
-import taichi as ti
 import trimesh
 import numpy as np
+import taichi as ti
 from PIL import Image
 
-# ti.init(ti.cuda)
-ti.init(ti.metal)
+#Detect Graphics Hardware
+arch=ti.cpu
+if ti._lib.core.with_metal():
+    arch=ti.metal
+elif ti._lib.core.with_vulkan():
+    arch=ti.vulkan
+elif ti._lib.core.with_cuda():
+    arch=ti.cuda
 
+ti.init(arch=arch)
+
+#Parameter Setting 
 dt=0.001
 VERTEX_NUMBER=22352
 FACE_NUMBER=45000
@@ -13,9 +22,10 @@ filename='./assets/sphere.obj'
 WIDTH=1024
 HEIGHT=2048
 TEX_RESOLUTION=(WIDTH,HEIGHT)
-earth_to_sun=5
+earth_to_sun=5 #distance
 moon_to_earth=0.5
 
+#Memory Allocation
 K=ti.field(dtype=float,shape=())
 sphere_vertices=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
 earth_vertices=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
@@ -47,6 +57,9 @@ indices=ti.field(ti.i32,shape=3*FACE_NUMBER)
 
 @ti.kernel
 def computeUV():
+    '''
+    Compute Sphere UV coordinates.
+    '''
     for i in ti.grouped(sphere_vertices):
         x,y,z=sphere_vertices[i]
         l=ti.math.sqrt(x**2+y**2+z**2)
@@ -60,7 +73,9 @@ def computeUV():
         uv_coords[i]=ti.Vector((u,v))
 
 def loadObjects():
-    'Load the 3D model'
+    '''
+    Load 3D model and Send geometry data to GPU (if applicable).
+    '''
     mesh=trimesh.load(filename,force='mesh')
     sphere_vertices.from_numpy(mesh.vertices.astype('float32'))
     np_indices=mesh.faces.astype('int32')
@@ -70,6 +85,9 @@ def loadObjects():
 
 @ti.kernel
 def render_earth():
+    '''
+    Assign vertex color according to UV coordinates.
+    '''
     for i in ti.grouped(earth_colors):
         earth_colors[i]=tex[int(uv_coords[i][1]*WIDTH),int(uv_coords[i][0]*HEIGHT)]/255.0
 
@@ -84,23 +102,39 @@ def render_moon():
         moon_colors[i]=tex[int(uv_coords[i][1]*WIDTH),int(uv_coords[i][0]*HEIGHT)]/255.0
 
 def texture_mapping():
+    #Load Texture Image
     earth=Image.open('./assets/textures/earth.jpg').convert('RGB')
+    #Send Texture to GPU (if applicable)
     tex.from_numpy(np.array(earth))
+    #Assign the vertex color
     render_earth()
+
     sun=Image.open('./assets/textures/sun.jpg').convert('RGB')
     tex.from_numpy(np.array(sun))
     render_sun()
+
     moon=Image.open('./assets/textures/moon.jpg')
     tex.from_numpy(np.array(moon))
     render_moon()
 
 def render(scene):
+    '''
+    Draw the textured meshes.
+    '''
     scene.mesh(vertices=sun_vertices,indices=indices,per_vertex_color=sun_colors)
     scene.mesh(vertices=earth_vertices,indices=indices,per_vertex_color=earth_colors,normals=earth_normals)
     scene.mesh(vertices=moon_vertices,indices=indices,per_vertex_color=moon_colors,normals=moon_normals)
 
 @ti.func
 def get_rotation_matrix(angular,axis):
+    '''
+    Generate Rotation Matrix according to the given angular and rotation axis.\n
+    angular: 0~360\n
+    axis:
+    0: x-axis
+    1: y-axis
+    2: z-axis
+    '''
     theta=ti.math.pi*angular/180.0
     ret=ti.Matrix([
             [1.0,.0,.0],
@@ -120,6 +154,7 @@ def get_rotation_matrix(angular,axis):
     
 @ti.kernel
 def transformation():
+    "Geometry Transformation"
     sun_scale=2.0
     earth_scale=0.4
     moon_scale=0.1
@@ -149,59 +184,77 @@ def check_field_upperbound(field,upper_bound):
         field[None]-=upper_bound
 
 def step():
+    '''
+    Simulation Step.
+    '''
+    #Explicit Integration
     for _ in range(100):
         substep()
+    
+    #update rotation angular
     earth_angular[None]+=earth_angular_velocity
     moon_rotation_angular[None]+=moon_rotation_v
     moon_revolution_angular[None]+=moon_revolution_v
 
+    #check numerical boundary
     check_field_upperbound(earth_angular,360)
     check_field_upperbound(moon_rotation_angular,360)
     check_field_upperbound(moon_revolution_angular,360)
 
+    #Geometry Transformation
     transformation()
 
 def init():
+    '''
+    Initialize parameters, velocities and positions.
+    '''
     K[None]=4.0
     ox,oy=0.6,0.8
     earth_v[None]=(-oy,ox,0)
     moon_v[None]=(0,-oy,ox)
     earth_v[None]*=10/earth_to_sun**1.5
-
     earth_x[None]=(ox*earth_to_sun,oy*earth_to_sun,0)
     
 
 def main():
+    #parameter used to record the screen
     result_dir = "../frames"
     video_manager = ti.tools.VideoManager(output_dir=result_dir,
                                         framerate=60,
                                         automatic_build=True)
+    save_screen=False
+    
     init()
     loadObjects()
     computeUV()
     texture_mapping()
+
+    #Construct a window
     window=ti.ui.Window("Sun Earth Moon",(1024,1024),vsync=True)
     canvas=window.get_canvas()
     gui=window.get_gui()
-    
     scene=ti.ui.Scene()
+
+    #Set up camera
     camera=ti.ui.Camera()
     camera.position(10,10,10)
     camera.lookat(0,0,0)
     camera.up(0,0,1)
     
+    #Rendering Loop
     while window.running:
         scene.point_light(pos=(0,0,0),color=(1,1,1))
         scene.ambient_light((0.3,0.3,0.3))
         camera.track_user_inputs(window,movement_speed=0.05,hold_key=ti.ui.LMB)
 
         scene.set_camera(camera)
-        step()
-        render(scene)
+        step()#Simulation
+        render(scene)#Draw meshes in scene
 
         canvas.scene(scene)
         canvas.set_background_color((0.,0.,0.))
 
+        #detect keyboard events
         for e in window.get_events(ti.ui.PRESS):
             if e.key =='c':
                 init()
@@ -211,8 +264,11 @@ def main():
                 if K[None]>.0:
                     K[None]-=1.0
         
-        # video_manager.write_frame(window.get_image_buffer_as_numpy())
+        #record the screen
+        if save_screen:
+            video_manager.write_frame(window.get_image_buffer_as_numpy())
 
+        #sub window used to display hints
         with gui.sub_window("Gravity", 0.01, 0.01, 0.2, 0.1) as w:
             w.text("Press wasd and mouse to move.")
             w.text("Press c: Reset Earth's Position.")
@@ -220,6 +276,7 @@ def main():
             w.text("Press k: Reduce Gravity.")
             w.text(f"Current Degree of Gravity:{K[None]:.2f}")
 
+        #update screen
         window.show()
 
 
