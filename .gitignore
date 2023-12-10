@@ -3,3 +3,4 @@ include
 *.out
 .vscode
 frames/
+.DS_Store
