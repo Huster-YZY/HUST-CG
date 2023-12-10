@@ -16,6 +16,7 @@ TEX_RESOLUTION=(WIDTH,HEIGHT)
 earth_to_sun=5
 moon_to_earth=0.5
 
+K=ti.field(dtype=float,shape=())
 sphere_vertices=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
 earth_vertices=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
 moon_vertices=ti.Vector.field(3,dtype=float,shape=VERTEX_NUMBER)
@@ -140,7 +141,7 @@ def gravity(k,pos,center):
 
 @ti.kernel
 def substep():
-    earth_v[None]+=dt*gravity(k=4.0,pos=earth_x[None],center=ti.Vector((.0,.0,.0)))
+    earth_v[None]+=dt*gravity(k=K[None],pos=earth_x[None],center=ti.Vector((.0,.0,.0)))
     earth_x[None]+=dt*earth_v[None]
 
 def check_field_upperbound(field,upper_bound):
@@ -161,6 +162,7 @@ def step():
     transformation()
 
 def init():
+    K[None]=4.0
     ox,oy=0.6,0.8
     earth_v[None]=(-oy,ox,0)
     moon_v[None]=(0,-oy,ox)
@@ -180,6 +182,7 @@ def main():
     texture_mapping()
     window=ti.ui.Window("Sun Earth Moon",(1024,1024),vsync=True)
     canvas=window.get_canvas()
+    gui=window.get_gui()
     
     scene=ti.ui.Scene()
     camera=ti.ui.Camera()
@@ -198,7 +201,25 @@ def main():
 
         canvas.scene(scene)
         canvas.set_background_color((0.,0.,0.))
+
+        for e in window.get_events(ti.ui.PRESS):
+            if e.key =='c':
+                init()
+            elif e.key=='j':
+                K[None]+=1.0
+            elif e.key=='k':
+                if K[None]>.0:
+                    K[None]-=1.0
+        
         # video_manager.write_frame(window.get_image_buffer_as_numpy())
+
+        with gui.sub_window("Gravity", 0.01, 0.01, 0.2, 0.1) as w:
+            w.text("Press wasd and mouse to move.")
+            w.text("Press c: Reset Earth's Position.")
+            w.text("Press j: Increase Gravity.")
+            w.text("Press k: Reduce Gravity.")
+            w.text(f"Current Degree of Gravity:{K[None]:.2f}")
+
         window.show()
 
 
