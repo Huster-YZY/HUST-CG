@@ -270,7 +270,7 @@ def main():
 
         #sub window used to display hints
         with gui.sub_window("Gravity", 0.01, 0.01, 0.2, 0.1) as w:
-            w.text("Press wasd and mouse to move.")
+            w.text("Press wasdqe and mouse to move.")
             w.text("Press c: Reset Earth's Position.")
             w.text("Press j: Increase Gravity.")
             w.text("Press k: Reduce Gravity.")
