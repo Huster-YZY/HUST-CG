@@ -7,10 +7,10 @@ from PIL import Image
 arch=ti.cpu
 if ti._lib.core.with_metal():
     arch=ti.metal
-elif ti._lib.core.with_vulkan():
-    arch=ti.vulkan
 elif ti._lib.core.with_cuda():
     arch=ti.cuda
+elif ti._lib.core.with_vulkan():
+    arch=ti.vulkan
 
 ti.init(arch=arch)
 
