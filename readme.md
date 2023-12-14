@@ -22,3 +22,9 @@ pip install -r requirements.txt
 cd python
 python solar.py
 ```
+
+# Controllable Gravity
+
+|Circular|Ellipse|Escape|
+|--|--|--|
+|<img src=./imgs/circular.png>|<img src=./imgs/ellipse.png>|<img src=./imgs/escape.png>|
